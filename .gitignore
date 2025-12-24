@@ -52,3 +52,7 @@ re.sh
 /scripts/local/
 /.env
 node_modules/
+
+# Nix
+/result
+/flake.lock
