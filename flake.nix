@@ -10,11 +10,6 @@
   };
 
   outputs = { self, nixpkgs, flake-utils, crane, home-manager, ... }:
-    let
-      # Shared module defaults
-      serviceName = "kairpodsd";
-      plasmoidId = "org.kairpods.plasma";
-    in
     flake-utils.lib.eachDefaultSystem
       (system:
         let
@@ -24,16 +19,8 @@
 
           craneLib = crane.mkLib pkgs;
 
-          src = pkgs.lib.cleanSourceWith {
-            src = ./service;
-          };
-
           kairpodsd = craneLib.buildPackage {
-            pname = serviceName;
-            version = "0.1.0";
-            src = pkgs.lib.cleanSourceWith {
-              src = ./service;
-            };
+            src = craneLib.cleanCargoSource ./service;
             nativeBuildInputs = with pkgs; [
               pkg-config
             ];
@@ -48,10 +35,10 @@
           # By shipping the directory in the Nix store and installing it via home.packages,
           # Plasma will see it as long as XDG_DATA_DIRS includes the profile share path
           # (Home Manager/NixOS do this).
-          kairpods-plasmoid = pkgs.stdenvNoCC.mkDerivation {
-            pname = plasmoidId;
+          kairpods-plasmoid = pkgs.stdenvNoCC.mkDerivation rec {
+            pname = "org.kairpods.plasma";
             version = "0.1.0";
-            src = ./.;
+            src = ./plasmoid;
 
             dontBuild = true;
 
