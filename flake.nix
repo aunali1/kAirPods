@@ -4,11 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-
-    # Rust builder with good Cargo.lock handling
     crane.url = "github:ipetkov/crane";
-
-    # Optional, but convenient for module wiring
     home-manager.url = "github:nix-community/home-manager";
     home-manager.inputs.nixpkgs.follows = "nixpkgs";
   };
@@ -17,85 +13,70 @@
     let
       # Shared module defaults
       serviceName = "kairpodsd";
-      plasmoidId  = "org.kairpods.plasma";
+      plasmoidId = "org.kairpods.plasma";
     in
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        pkgs = import nixpkgs {
-          inherit system;
-        };
-
-        craneLib = crane.mkLib pkgs;
-
-        # --- Rust service build ---
-        # Build dependencies expected by your install script: dbus + bluez + pkg-config.
-        # Add openssl only if your crate uses it; remove if not needed.
-        commonBuildInputs = with pkgs; [
-          dbus
-          bluez
-        ];
-
-        commonNativeBuildInputs = with pkgs; [
-          pkg-config
-        ];
-
-        src = pkgs.lib.cleanSourceWith {
-          src = ./service;
-          filter = path: type:
-            # Keep everything except obvious junk
-            let base = builtins.baseNameOf path; in
-            !(base == "target" || base == ".git" || base == "result");
-        };
-
-        kairpodsd = craneLib.buildPackage {
-          pname = serviceName;
-          version = "0.1.0";
-          inherit src;
-
-          # If your crate uses a workspace, you can instead set:
-          # cargoToml = ./service/Cargo.toml; cargoLock = ./Cargo.lock;
-
-          nativeBuildInputs = commonNativeBuildInputs;
-          buildInputs = commonBuildInputs;
-
-          # If you need extra env for linking, add here.
-          # For example:
-          # PKG_CONFIG_PATH = "${pkgs.dbus.dev}/lib/pkgconfig:${pkgs.bluez.dev}/lib/pkgconfig";
-        };
-
-        # --- Plasmoid packaging ---
-        # Plasma searches $XDG_DATA_DIRS/share/plasma/plasmoids/<id>.
-        # By shipping the directory in the Nix store and installing it via home.packages,
-        # Plasma will see it as long as XDG_DATA_DIRS includes the profile share path
-        # (Home Manager/NixOS do this).
-        kairpods-plasmoid = pkgs.stdenvNoCC.mkDerivation {
-          pname = plasmoidId;
-          version = "0.1.0";
-          src = ./.;
-
-          dontBuild = true;
-
-          installPhase = ''
-            runHook preInstall
-            mkdir -p "$out/share/plasma/plasmoids"
-            cp -R ./plasmoid "$out/share/plasma/plasmoids/${plasmoidId}"
-            runHook postInstall
-          '';
-
-          meta = with pkgs.lib; {
-            description = "kAirPods Plasma 6 widget (plasmoid) for AirPods battery display";
-            platforms = platforms.linux;
+    flake-utils.lib.eachDefaultSystem
+      (system:
+        let
+          pkgs = import nixpkgs {
+            inherit system;
           };
-        };
 
-      in {
-        packages = {
-          default = kairpodsd;
-          kairpodsd = kairpodsd;
-          plasmoid = kairpods-plasmoid;
-        };
-      }
-    )
+          craneLib = crane.mkLib pkgs;
+
+          src = pkgs.lib.cleanSourceWith {
+            src = ./service;
+          };
+
+          kairpodsd = craneLib.buildPackage {
+            pname = serviceName;
+            version = "0.1.0";
+            src = pkgs.lib.cleanSourceWith {
+              src = ./service;
+            };
+            nativeBuildInputs = with pkgs; [
+              pkg-config
+            ];
+            buildInputs = with pkgs; [
+              dbus
+              bluez
+            ];
+          };
+
+          # --- Plasmoid packaging ---
+          # Plasma searches $XDG_DATA_DIRS/share/plasma/plasmoids/<id>.
+          # By shipping the directory in the Nix store and installing it via home.packages,
+          # Plasma will see it as long as XDG_DATA_DIRS includes the profile share path
+          # (Home Manager/NixOS do this).
+          kairpods-plasmoid = pkgs.stdenvNoCC.mkDerivation {
+            pname = plasmoidId;
+            version = "0.1.0";
+            src = ./.;
+
+            dontBuild = true;
+
+            installPhase = ''
+              runHook preInstall
+              mkdir -p "$out/share/plasma/plasmoids"
+              cp -R ./plasmoid "$out/share/plasma/plasmoids/${plasmoidId}"
+              runHook postInstall
+            '';
+
+            meta = with pkgs.lib; {
+              description = "kAirPods Plasma 6 widget (plasmoid) for AirPods battery display";
+              platforms = platforms.linux;
+            };
+          };
+
+        in
+        {
+          packages = {
+            default = kairpodsd;
+            kairpodsd = kairpodsd;
+            plasmoid = kairpods-plasmoid;
+          };
+        }
+      )
     //
     {
       # ---------------------------
