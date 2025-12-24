@@ -58,7 +58,7 @@
             installPhase = ''
               runHook preInstall
               mkdir -p "$out/share/plasma/plasmoids"
-              cp -R ./plasmoid "$out/share/plasma/plasmoids/${plasmoidId}"
+              ln -s "$src" "$out/share/plasma/plasmoids/${pname}"
               runHook postInstall
             '';
 
