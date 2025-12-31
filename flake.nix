@@ -16,25 +16,49 @@
           pkgs = import nixpkgs {
             inherit system;
           };
-
           craneLib = crane.mkLib pkgs;
 
-          kairpodsd = craneLib.buildPackage {
-            src = craneLib.cleanCargoSource ./service;
-            nativeBuildInputs = with pkgs; [
-              pkg-config
-            ];
-            buildInputs = with pkgs; [
-              dbus
-              bluez
-            ];
-          };
+          # check that the service unit file has not changed
+          serviceUnitHashValid =
+            let
+              serviceUnitPath = ./service/systemd/user/kairpodsd.service;
+              expectedServiceUnitHash = "sha256-aWc/ii+K8S6wElIq1tm0Rr3aUzXWGsYUSFy9idGTXQY=";
+              actualServiceUnitHash = builtins.convertHash rec {
+                hashAlgo = "sha256";
+                toHashFormat = "sri";
+                hash = builtins.hashFile hashAlgo serviceUnitPath;
+              };
+            in
+            if actualServiceUnitHash != expectedServiceUnitHash then
+              throw ''
+                kAirPods flake error: service/systemd/user/kairpodsd.service changed.
 
-          # --- Plasmoid packaging ---
-          # Plasma searches $XDG_DATA_DIRS/share/plasma/plasmoids/<id>.
-          # By shipping the directory in the Nix store and installing it via home.packages,
-          # Plasma will see it as long as XDG_DATA_DIRS includes the profile share path
-          # (Home Manager/NixOS do this).
+                Expected hash: "${expectedServiceUnitHash}"
+                Actual hash: "${actualServiceUnitHash}"
+
+                Update the Home Manager `systemd.user.services.kairpodsd` definition to match,
+                then update `expectedServiceUnitHash`.
+              ''
+            else
+              true;
+
+          # if the service unit file is valid, build the service package
+          kairpodsd =
+            if serviceUnitHashValid then
+              craneLib.buildPackage
+                {
+                  src = craneLib.cleanCargoSource ./service;
+                  nativeBuildInputs = with pkgs; [
+                    pkg-config
+                  ];
+                  buildInputs = with pkgs; [
+                    dbus
+                    bluez
+                  ];
+                }
+            else null;
+
+          # Plasma searches $XDG_DATA_DIRS/share/plasma/plasmoids/<id> for plasmoids
           kairpods-plasmoid = pkgs.stdenvNoCC.mkDerivation rec {
             pname = "org.kairpods.plasma";
             version = "0.1.0";
