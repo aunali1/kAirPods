@@ -10,8 +10,9 @@ use smol_str::SmolStr;
 
 use crate::{
    airpods::protocol::{
-      BatteryInfo, BatteryState, BatteryStatus, Component, EarDetectionStatus, HDR_BATTERY_STATE,
-      HDR_EAR_DETECTION, HDR_METADATA, NoiseControlMode,
+      BatteryInfo, BatteryState, BatteryStatus, BudSide, Component, EarDetectionStatus,
+      HDR_BATTERY_STATE, HDR_EAR_DETECTION, HDR_METADATA, HDR_STEM_PRESS, NoiseControlMode,
+      StemPressEvent, StemPressType,
    },
    error::Result,
 };
@@ -48,6 +49,14 @@ pub enum ProtoError {
    /// Generic invalid packet format
    #[error("Invalid packet format: {reason}")]
    InvalidFormat { reason: &'static str },
+
+   /// Unknown stem press type
+   #[error("Unknown stem press type: 0x{press_type:02x}")]
+   UnknownStemPressType { press_type: u8 },
+
+   /// Unknown bud side
+   #[error("Unknown bud side: 0x{side:02x}")]
+   UnknownBudSide { side: u8 },
 }
 
 /// Parses a battery status packet from `AirPods`.
@@ -246,4 +255,45 @@ pub fn parse_metadata(data: &[u8]) -> Result<Metadata> {
    }
 
    Ok(Metadata { name_candidate })
+}
+
+/// Parses a stem press event packet from `AirPods`.
+///
+/// The packet format is 8 bytes: 6-byte header + press type + bud side.
+pub fn parse_stem_press(data: &[u8]) -> Result<StemPressEvent> {
+   if !data.starts_with(HDR_STEM_PRESS) {
+      return Err(
+         ProtoError::WrongPacketType {
+            expected: "stem press",
+         }
+         .into(),
+      );
+   }
+   if data.len() < 8 {
+      return Err(
+         ProtoError::PacketTooShort {
+            expected: 8,
+            actual: data.len(),
+         }
+         .into(),
+      );
+   }
+
+   let press_type_byte = data[6];
+   let side_byte = data[7];
+
+   let Some(press_type) = StemPressType::from_repr(press_type_byte) else {
+      return Err(
+         ProtoError::UnknownStemPressType {
+            press_type: press_type_byte,
+         }
+         .into(),
+      );
+   };
+   let Some(side) = BudSide::from_repr(side_byte) else {
+      return Err(ProtoError::UnknownBudSide { side: side_byte }.into());
+   };
+
+   debug!("Stem press: {press_type} on {side}");
+   Ok(StemPressEvent { press_type, side })
 }

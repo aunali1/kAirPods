@@ -634,6 +634,7 @@ impl ManagerActor {
 
       // Create managed device
       let airpods = AirPods::new(addr, name, self.battery_study.clone());
+      airpods.set_stem_gestures_enabled(self.config.gestures.enabled);
       let managed = ManagedDevice {
          device: airpods,
          bluetooth_state: BluetoothState::Connected,

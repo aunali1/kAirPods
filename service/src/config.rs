@@ -30,6 +30,9 @@ pub struct Config {
 
    #[serde(default)]
    pub log_filter: Option<SmolStr>,
+
+   #[serde(default)]
+   pub gestures: GestureConfig,
 }
 
 /// Represents a known `AirPods` device.
@@ -55,6 +58,69 @@ const fn default_reconnect_delay() -> u64 {
    10
 }
 
+/// Action to perform for a stem press gesture.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum GestureAction {
+   PlayPause,
+   Next,
+   Previous,
+   CycleNoiseMode,
+   None,
+}
+
+/// Configuration for stem press gesture handling.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct GestureConfig {
+   /// Whether to intercept stem presses via AAP (vs letting AVRCP handle them).
+   #[serde(default = "default_gesture_enabled")]
+   pub enabled: bool,
+
+   #[serde(default = "default_single_press_action")]
+   pub single_press: GestureAction,
+
+   #[serde(default = "default_double_press_action")]
+   pub double_press: GestureAction,
+
+   #[serde(default = "default_triple_press_action")]
+   pub triple_press: GestureAction,
+
+   #[serde(default = "default_long_press_action")]
+   pub long_press: GestureAction,
+}
+
+const fn default_gesture_enabled() -> bool {
+   true
+}
+
+fn default_single_press_action() -> GestureAction {
+   GestureAction::PlayPause
+}
+
+fn default_double_press_action() -> GestureAction {
+   GestureAction::Next
+}
+
+fn default_triple_press_action() -> GestureAction {
+   GestureAction::Previous
+}
+
+fn default_long_press_action() -> GestureAction {
+   GestureAction::CycleNoiseMode
+}
+
+impl Default for GestureConfig {
+   fn default() -> Self {
+      Self {
+         enabled: default_gesture_enabled(),
+         single_press: default_single_press_action(),
+         double_press: default_double_press_action(),
+         triple_press: default_triple_press_action(),
+         long_press: default_long_press_action(),
+      }
+   }
+}
+
 impl Default for Config {
    fn default() -> Self {
       Self {
@@ -64,6 +130,7 @@ impl Default for Config {
          reconnect_delay_sec: default_reconnect_delay(),
          notification_retries: default_notification_retries(),
          log_filter: None,
+         gestures: GestureConfig::default(),
       }
    }
 }

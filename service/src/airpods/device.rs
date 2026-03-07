@@ -31,8 +31,8 @@ use crate::{
       protocol::{
          BatteryInfo, EarDetectionStatus, FeatureBitmap, FeatureCmd, FeatureId, HDR_ACK_FEATURES,
          HDR_ACK_HANDSHAKE, HDR_BATTERY_STATE, HDR_EAR_DETECTION, HDR_METADATA, HDR_NOISE_CTL,
-         NoiseControlMode, PKT_HANDSHAKE, PKT_REQUEST_NOTIFY, PKT_SET_FEATURES,
-         build_control_packet,
+         HDR_STEM_PRESS, NoiseControlMode, PKT_HANDSHAKE, PKT_REQUEST_NOTIFY, PKT_SET_FEATURES,
+         PKT_STEM_CONFIG, build_control_packet,
       },
    },
    battery_study::{BatteryStudy, BatteryTracker},
@@ -64,10 +64,12 @@ struct AirPodsInner {
    is_connected: AtomicBool,
    ear_detection: AtomicCell<Option<EarDetectionStatus>>,
    noise_mode: AtomicCell<Option<NoiseControlMode>>,
+   prev_noise_mode: AtomicCell<Option<NoiseControlMode>>,
    features: FeatureBitmap,
    features_present: FeatureBitmap,
    conn: RwLock<Option<ConnectionState>>,
    battery_tracker: parking_lot::Mutex<BatteryTracker>,
+   stem_gestures_enabled: AtomicBool,
 }
 
 /// Represents a connected `AirPods` device.
@@ -209,7 +211,16 @@ impl AirPods {
       &self,
       mode: impl Into<Option<NoiseControlMode>>,
    ) -> UpdateOp<NoiseControlMode> {
-      UpdateOp::apply_atomic(&self.0.noise_mode, mode.into())
+      let op = UpdateOp::apply_atomic(&self.0.noise_mode, mode.into());
+      if let UpdateOp::Updated(prev) = op {
+         self.0.prev_noise_mode.store(Some(prev));
+      }
+      op
+   }
+
+   /// Gets the previous noise control mode (for toggle behavior).
+   pub fn prev_noise_mode(&self) -> Option<NoiseControlMode> {
+      self.0.prev_noise_mode.load()
    }
 
    /// Converts the device state to a JSON representation.
@@ -263,6 +274,11 @@ impl AirPods {
    pub fn set_feature_enabled(&self, feature: FeatureId, enabled: bool) -> bool {
       self.0.features_present.set(feature, true);
       self.0.features.set(feature, enabled)
+   }
+
+   /// Sets whether stem gesture interception via AAP is enabled.
+   pub fn set_stem_gestures_enabled(&self, enabled: bool) {
+      self.0.stem_gestures_enabled.store(enabled, Ordering::Relaxed);
    }
 
    /// Establishes an L2CAP connection to the `AirPods` device.
@@ -367,6 +383,15 @@ impl AirPods {
          return Err(e);
       }
 
+      // Request raw stem gesture events if enabled
+      if self.0.stem_gestures_enabled.load(Ordering::Relaxed) {
+         if let Err(e) = sender.send(PKT_STEM_CONFIG).await {
+            warn!("Failed to send stem config: {e:?}");
+         } else {
+            info!("Stem config sent, requesting raw gesture events");
+         }
+      }
+
       // Schedule retry for notifications with battery status check
       let weak = WeakAirPods::new(self);
       let mac = self.address();
@@ -438,7 +463,12 @@ impl AirPods {
       if let Some(conn) = conn.as_ref() {
          let packet = build_control_packet(0x0D, (mode as u32).to_le_bytes());
          conn.sender.send(&packet).await?;
-         self.0.noise_mode.store(Some(mode));
+         let prev = self.0.noise_mode.swap(Some(mode));
+         if let Some(prev) = prev {
+            if prev != mode {
+               self.0.prev_noise_mode.store(Some(prev));
+            }
+         }
          Ok(())
       } else {
          Err(AirPodsError::DeviceNotConnected)
@@ -522,6 +552,19 @@ impl AirPods {
                }
             },
             Err(e) => warn!("Failed to parse ear detection: {e}"),
+         }
+      }
+      // Stem press events
+      else if packet.starts_with(HDR_STEM_PRESS) {
+         match parser::parse_stem_press(&packet) {
+            Ok(stem_event) => {
+               debug!(
+                  "Stem press from {}: {:?} on {:?}",
+                  address, stem_event.press_type, stem_event.side
+               );
+               event_tx.emit(self, AirPodsEvent::StemPressed(stem_event));
+            },
+            Err(e) => warn!("Failed to parse stem press: {e}"),
          }
       }
       // Metadata packets

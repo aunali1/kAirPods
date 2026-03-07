@@ -210,3 +210,59 @@ async fn send_mpris_command_to_player(
 
    Ok(())
 }
+
+/// Finds the first active MPRIS player on the session bus.
+async fn find_first_mpris_player() -> Option<String> {
+   let connection = Connection::session().await.ok()?;
+   let dbus_proxy = zbus::fdo::DBusProxy::new(&connection).await.ok()?;
+   let names = dbus_proxy.list_names().await.ok()?;
+
+   names
+      .iter()
+      .find(|name| {
+         let s = name.as_str();
+         s.starts_with("org.mpris.MediaPlayer2.")
+            && !s.contains("kdeconnect")
+            && !s.contains("KDEConnect")
+      })
+      .map(|n| n.as_str().to_string())
+}
+
+/// Sends a PlayPause toggle to the first active MPRIS player.
+pub async fn send_play_pause() {
+   if let Some(player) = find_first_mpris_player().await {
+      if let Err(e) = send_mpris_command_to_player("PlayPause", &player).await {
+         warn!("Failed to send PlayPause command: {e}");
+      } else {
+         debug!("Sent PlayPause to {player}");
+      }
+   } else {
+      debug!("No MPRIS player found for PlayPause command");
+   }
+}
+
+/// Sends a Next command to the first active MPRIS player.
+pub async fn send_next() {
+   if let Some(player) = find_first_mpris_player().await {
+      if let Err(e) = send_mpris_command_to_player("Next", &player).await {
+         warn!("Failed to send Next command: {e}");
+      } else {
+         debug!("Sent Next to {player}");
+      }
+   } else {
+      debug!("No MPRIS player found for Next command");
+   }
+}
+
+/// Sends a Previous command to the first active MPRIS player.
+pub async fn send_previous() {
+   if let Some(player) = find_first_mpris_player().await {
+      if let Err(e) = send_mpris_command_to_player("Previous", &player).await {
+         warn!("Failed to send Previous command: {e}");
+      } else {
+         debug!("Sent Previous to {player}");
+      }
+   } else {
+      debug!("No MPRIS player found for Previous command");
+   }
+}

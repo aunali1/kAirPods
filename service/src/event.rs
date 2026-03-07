@@ -10,7 +10,7 @@ use smol_str::SmolStr;
 
 use crate::airpods::{
    device::AirPods,
-   protocol::{BatteryInfo, EarDetectionStatus, NoiseControlMode},
+   protocol::{BatteryInfo, EarDetectionStatus, NoiseControlMode, StemPressEvent},
 };
 
 /// Events that can be emitted by the `AirPods` service.
@@ -22,6 +22,7 @@ pub enum AirPodsEvent {
    BatteryUpdated(BatteryInfo),
    NoiseControlChanged(NoiseControlMode),
    EarDetectionChanged(EarDetectionStatus),
+   StemPressed(StemPressEvent),
    DeviceNameChanged(SmolStr),
 }
 

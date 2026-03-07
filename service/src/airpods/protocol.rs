@@ -27,6 +27,11 @@ pub const PKT_SET_FEATURES: &[u8] = &[
 pub const PKT_REQUEST_NOTIFY: &[u8] = &[
    0x04, 0x00, 0x04, 0x00, 0x0f, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff,
 ];
+/// Stem config packet requesting raw gesture events from AirPods.
+/// Bitmask: 0x0F = single(0x01) | double(0x02) | triple(0x04) | long(0x08)
+pub const PKT_STEM_CONFIG: &[u8] = &[
+   0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x39, 0x0F, 0x00, 0x00, 0x00,
+];
 
 // Parsing headers
 pub const HDR_BATTERY_STATE: &[u8] = b"\x04\x00\x04\x00\x04\x00";
@@ -38,6 +43,7 @@ pub const HDR_ACK_HANDSHAKE: &[u8] = b"\x01\x00\x04\x00";
 pub const HDR_ACK_FEATURES: &[u8] = b"\x04\x00\x04\x00\x2b";
 pub const HDR_METADATA: &[u8] = b"\x04\x00\x04\x00\x1d";
 pub const HDR_EAR_DETECTION: &[u8] = b"\x04\x00\x04\x00\x06\x00";
+pub const HDR_STEM_PRESS: &[u8] = b"\x04\x00\x04\x00\x19\x00";
 
 /// Represents different components of `AirPods`.
 #[repr(u8)]
@@ -493,6 +499,82 @@ impl EarDetectionStatus {
       json!({
           "left_in_ear": self.is_left_in_ear(),
           "right_in_ear": self.is_right_in_ear(),
+      })
+   }
+}
+
+/// Types of stem press events received from `AirPods`.
+#[repr(u8)]
+#[derive(
+   Debug,
+   Clone,
+   Copy,
+   PartialEq,
+   Eq,
+   Serialize,
+   Deserialize,
+   strum::FromRepr,
+   strum::Display,
+   strum::EnumString,
+   strum::IntoStaticStr,
+)]
+pub enum StemPressType {
+   #[strum(serialize = "single")]
+   Single = 0x05,
+   #[strum(serialize = "double")]
+   Double = 0x06,
+   #[strum(serialize = "triple")]
+   Triple = 0x07,
+   #[strum(serialize = "long")]
+   Long = 0x08,
+}
+
+impl StemPressType {
+   pub fn to_str(self) -> &'static str {
+      self.into()
+   }
+}
+
+/// Which `AirPod` bud generated the stem press event.
+#[repr(u8)]
+#[derive(
+   Debug,
+   Clone,
+   Copy,
+   PartialEq,
+   Eq,
+   Serialize,
+   Deserialize,
+   strum::FromRepr,
+   strum::Display,
+   strum::EnumString,
+   strum::IntoStaticStr,
+)]
+pub enum BudSide {
+   #[strum(serialize = "left")]
+   Left = 0x01,
+   #[strum(serialize = "right")]
+   Right = 0x02,
+}
+
+impl BudSide {
+   pub fn to_str(self) -> &'static str {
+      self.into()
+   }
+}
+
+/// A parsed stem press event from `AirPods`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StemPressEvent {
+   pub press_type: StemPressType,
+   pub side: BudSide,
+}
+
+impl StemPressEvent {
+   pub fn to_json(self) -> serde_json::Value {
+      json!({
+          "press_type": self.press_type.to_str(),
+          "side": self.side.to_str(),
       })
    }
 }

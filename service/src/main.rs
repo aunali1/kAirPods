@@ -26,7 +26,15 @@ mod event;
 mod media_control;
 mod ringbuf;
 
-use crate::{airpods::device::AirPods, dbus::AirPodsServiceSignals, error::Result};
+use crate::{
+   airpods::{
+      device::AirPods,
+      protocol::{NoiseControlMode, StemPressType},
+   },
+   config::GestureAction,
+   dbus::AirPodsServiceSignals,
+   error::Result,
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -74,7 +82,7 @@ async fn main() -> Result<()> {
    }
 
    // Create event channel
-   let event_bus = EventProcessor::new();
+   let event_bus = EventProcessor::new(config.gestures.clone());
 
    // Initialize battery study database
    let battery_study = match battery_study::BatteryStudy::open() {
@@ -127,13 +135,15 @@ async fn main() -> Result<()> {
 struct EventProcessor {
    queue: SegQueue<(AirPods, AirPodsEvent)>,
    notifier: Notify,
+   gesture_config: config::GestureConfig,
 }
 
 impl EventProcessor {
-   fn new() -> Arc<Self> {
+   fn new(gesture_config: config::GestureConfig) -> Arc<Self> {
       Arc::new(Self {
          queue: SegQueue::new(),
          notifier: Notify::new(),
+         gesture_config,
       })
    }
 }
@@ -251,6 +261,50 @@ impl EventProcessor {
             } else {
                // At least one AirPod is out of ear - send pause command
                media_control::send_pause().await;
+            }
+         },
+         AirPodsEvent::StemPressed(stem_event) => {
+            iface
+               .stem_pressed(addr_str, &stem_event.to_json().to_string())
+               .await?;
+
+            let action = match stem_event.press_type {
+               StemPressType::Single => &self.gesture_config.single_press,
+               StemPressType::Double => &self.gesture_config.double_press,
+               StemPressType::Triple => &self.gesture_config.triple_press,
+               StemPressType::Long => &self.gesture_config.long_press,
+            };
+
+            match action {
+               GestureAction::PlayPause => media_control::send_play_pause().await,
+               GestureAction::Next => media_control::send_next().await,
+               GestureAction::Previous => media_control::send_previous().await,
+               GestureAction::CycleNoiseMode => {
+                  if let Some(current_mode) = device.noise_mode() {
+                     let next_mode = device
+                        .prev_noise_mode()
+                        .filter(|prev| *prev != current_mode)
+                        .unwrap_or(if current_mode == NoiseControlMode::Active {
+                           NoiseControlMode::Transparency
+                        } else {
+                           NoiseControlMode::Active
+                        });
+                     if let Err(e) = device.set_noise_control(next_mode).await {
+                        warn!("Failed to toggle noise mode: {e}");
+                     } else {
+                        // Notify UI of the noise mode change
+                        iface
+                           .noise_control_changed(addr_str, next_mode.to_str())
+                           .await?;
+                        iface
+                           .get_mut()
+                           .await
+                           .devices_changed(iface.signal_emitter())
+                           .await?;
+                     }
+                  }
+               },
+               GestureAction::None => {},
             }
          },
          AirPodsEvent::DeviceNameChanged(name) => {

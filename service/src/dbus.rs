@@ -179,6 +179,13 @@ impl AirPodsService {
    #[zbus(signal)]
    pub async fn device_error(emitter: &SignalEmitter<'_>, address: &str) -> zbus::Result<()>;
 
+   #[zbus(signal)]
+   pub async fn stem_pressed(
+      emitter: &SignalEmitter<'_>,
+      address: &str,
+      event: &str,
+   ) -> zbus::Result<()>;
+
    // Properties for polling-free updates
    #[zbus(property)]
    async fn devices(&self) -> String {
